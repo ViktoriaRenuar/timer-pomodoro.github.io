@@ -391,23 +391,18 @@ class FocusTimer {
     }
 
     async registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            try {
-                const registration = await navigator.serviceWorker.register('./sw.js', {
-                scope: './'
+    if ('serviceWorker' in navigator) {
+        try {
+            // ИСПРАВЛЕНО: убираем /pwa/
+            const registration = await navigator.serviceWorker.register('/sw.js', {
+                scope: '/'
             });
-                console.log('Service Worker registered:', registration);
-
-                // Проверяем подписку на push уведомления
-                const subscription = await registration.pushManager.getSubscription();
-                if (!subscription && this.notificationsEnabled) {
-                    await this.subscribeToPush(registration);
-                }
-            } catch (error) {
-                console.error('Service Worker registration failed:', error);
-            }
+            console.log('Service Worker registered:', registration);
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
         }
     }
+}
 
     async subscribeToPush(registration) {
         try {
