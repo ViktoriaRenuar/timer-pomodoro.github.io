@@ -332,17 +332,22 @@ class FocusTimer {
     }
     
     async registerServiceWorker() {
-        if ('serviceWorker' in navigator) {
-            try {
-                const registration = await navigator.serviceWorker.register('/sw.js', {
-                    scope: '/'
-                });
-                console.log('Service Worker registered:', registration);
-            } catch (error) {
-                console.error('Service Worker registration failed:', error);
-            }
+    if ('serviceWorker' in navigator) {
+        try {
+            // Определяем правильный путь к sw.js
+            const swPath = window.location.pathname.includes('timer-pomodoro.github.io') 
+                ? '/timer-pomodoro.github.io/sw.js' 
+                : '/sw.js';
+            
+            console.log('Registering SW at:', swPath);
+            
+            const registration = await navigator.serviceWorker.register(swPath);
+            console.log('Service Worker registered:', registration);
+        } catch (error) {
+            console.error('Service Worker registration failed:', error);
         }
     }
+}
     
     async loadData() {
         const data = localStorage.getItem('focusTimer');
