@@ -1,15 +1,17 @@
-// Service Worker äëÿ Focus Timer PWA
+// Service Worker Ã¤Ã«Ã¿ Focus Timer PWA
 
 const CACHE_NAME = 'focus-timer-v1';
 const urlsToCache = [
-    '/pwa/',
-    '/pwa/index.html',
-    '/pwa/style.css',
-    '/pwa/script.js',
-    '/pwa/manifest.json'
+    './',
+    './index.html',
+    './style.css',
+    './script.js',
+    './manifest.json',
+    './icons/icon-192x192.png',
+    './icons/icon-512x512.png'
 ];
 
-// Óñòàíîâêà Service Worker è êåøèðîâàíèå ôàéëîâ
+// Ã“Ã±Ã²Ã Ã­Ã®Ã¢ÃªÃ  Service Worker Ã¨ ÃªÃ¥Ã¸Ã¨Ã°Ã®Ã¢Ã Ã­Ã¨Ã¥ Ã´Ã Ã©Ã«Ã®Ã¢
 self.addEventListener('install', event => {
     console.log('Service Worker installing...');
     event.waitUntil(
@@ -25,7 +27,7 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Àêòèâàöèÿ è î÷èñòêà ñòàðûõ êåøåé
+// Ã€ÃªÃ²Ã¨Ã¢Ã Ã¶Ã¨Ã¿ Ã¨ Ã®Ã·Ã¨Ã±Ã²ÃªÃ  Ã±Ã²Ã Ã°Ã»Ãµ ÃªÃ¥Ã¸Ã¥Ã©
 self.addEventListener('activate', event => {
     console.log('Service Worker activating...');
     event.waitUntil(
@@ -43,7 +45,7 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Îáðàáîòêà fetch çàïðîñîâ (îôëàéí ðåæèì)
+// ÃŽÃ¡Ã°Ã Ã¡Ã®Ã²ÃªÃ  fetch Ã§Ã Ã¯Ã°Ã®Ã±Ã®Ã¢ (Ã®Ã´Ã«Ã Ã©Ã­ Ã°Ã¥Ã¦Ã¨Ã¬)
 self.addEventListener('fetch', event => {
     event.respondWith(
         caches.match(event.request)
@@ -68,11 +70,11 @@ self.addEventListener('fetch', event => {
     );
 });
 
-// Îáðàáîòêà push óâåäîìëåíèé
+// ÃŽÃ¡Ã°Ã Ã¡Ã®Ã²ÃªÃ  push Ã³Ã¢Ã¥Ã¤Ã®Ã¬Ã«Ã¥Ã­Ã¨Ã©
 self.addEventListener('push', event => {
     let data = {
         title: 'Focus Timer',
-        body: 'Âðåìÿ âûøëî!',
+        body: 'Ã‚Ã°Ã¥Ã¬Ã¿ Ã¢Ã»Ã¸Ã«Ã®!',
         icon: '/pwa/icons/icon-192x192.png'
     };
 
@@ -99,7 +101,7 @@ self.addEventListener('push', event => {
     );
 });
 
-// Îáðàáîòêà êëèêà ïî óâåäîìëåíèþ
+// ÃŽÃ¡Ã°Ã Ã¡Ã®Ã²ÃªÃ  ÃªÃ«Ã¨ÃªÃ  Ã¯Ã® Ã³Ã¢Ã¥Ã¤Ã®Ã¬Ã«Ã¥Ã­Ã¨Ã¾
 self.addEventListener('notificationclick', event => {
     console.log('Notification clicked:', event);
     event.notification.close();
@@ -119,7 +121,7 @@ self.addEventListener('notificationclick', event => {
     );
 });
 
-// Îáðàáîòêà ñîîáùåíèé îò îñíîâíîãî ïîòîêà
+// ÃŽÃ¡Ã°Ã Ã¡Ã®Ã²ÃªÃ  Ã±Ã®Ã®Ã¡Ã¹Ã¥Ã­Ã¨Ã© Ã®Ã² Ã®Ã±Ã­Ã®Ã¢Ã­Ã®Ã£Ã® Ã¯Ã®Ã²Ã®ÃªÃ 
 self.addEventListener('message', event => {
     console.log('Message received in SW:', event.data);
     if (event.data.type === 'SHOW_NOTIFICATION') {
