@@ -1,0 +1,78 @@
+﻿<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4CAF50">
+    <meta name="description" content="Focus Timer - простой таймер для техники Pomodoro с уведомлениями">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <title>Focus Timer - Pomodoro таймер</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="apple-touch-icon" href="/pwa/icons/icon-192x192.png">
+</head>
+<body>
+    <div class="container">
+        <div class="app-header">
+            <h1>🍅 Focus Timer</h1>
+            <button id="installBtn" class="install-btn" style="display: none;">📱 Установить</button>
+        </div>
+
+        <div class="timer-mode">
+            <button class="mode-btn active" data-mode="focus">Фокус (25:00)</button>
+            <button class="mode-btn" data-mode="shortBreak">Короткий перерыв (05:00)</button>
+            <button class="mode-btn" data-mode="longBreak">Длинный перерыв (15:00)</button>
+        </div>
+
+        <div class="timer-display">
+            <div class="timer-circle">
+                <div class="timer-text" id="timer">25:00</div>
+                <div class="timer-label" id="modeLabel">Время фокуса</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="control-btn start">▶ Старт</button>
+            <button id="pauseBtn" class="control-btn pause" disabled>⏸ Пауза</button>
+            <button id="resetBtn" class="control-btn reset">🔄 Сброс</button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value" id="sessionsCount">0</div>
+                <div class="stat-label">Завершенных сессий</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalFocusTime">0</div>
+                <div class="stat-label">Всего минут фокуса</div>
+            </div>
+        </div>
+
+        <div class="settings">
+            <h3>⚙️ Настройки</h3>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="notificationsEnabled" checked>
+                    Включить уведомления
+                </label>
+            </div>
+            <div class="setting-item">
+                <label>
+                    <input type="checkbox" id="soundEnabled" checked>
+                    Звук окончания
+                </label>
+            </div>
+            <div class="setting-item">
+                <button id="testSoundBtn" class="test-sound-btn">🔊 Тест звука</button>
+            </div>
+        </div>
+
+        <div class="history">
+            <h3>📊 История сессий</h3>
+            <div id="historyList" class="history-list"></div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
