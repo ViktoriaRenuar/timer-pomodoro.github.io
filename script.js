@@ -365,17 +365,18 @@ class FocusTimer {
 
     async sendNotification(title, body) {
         if ('Notification' in window && Notification.permission === 'granted') {
+            const iconPath = './icons/icon-192x192.png';
             // Показываем уведомление через Service Worker для PWA
             if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
                 navigator.serviceWorker.controller.postMessage({
                     type: 'SHOW_NOTIFICATION',
                     title: title,
                     body: body,
-                    icon: '/pwa/icons/icon-192x192.png'
+                    icon: iconPath
                 });
             } else {
                 // Fallback на обычное уведомление
-                new Notification(title, { body, icon: '/pwa/icons/icon-192x192.png' });
+                new Notification(title, { body, icon: iconPath });
             }
         }
     }
@@ -392,8 +393,9 @@ class FocusTimer {
     async registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
-                // ИСПРАВЛЕНО: добавляем /pwa/ перед sw.js
-                const registration = await navigator.serviceWorker.register('/pwa/sw.js');
+                const registration = await navigator.serviceWorker.register('./sw.js', {
+                scope: './'
+            });
                 console.log('Service Worker registered:', registration);
 
                 // Проверяем подписку на push уведомления
