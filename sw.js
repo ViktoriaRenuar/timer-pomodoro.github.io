@@ -1,17 +1,17 @@
-// Service Worker äëÿ Focus Timer PWA
+// Service Worker для Focus Timer PWA
 
 const CACHE_NAME = 'focus-timer-v1';
 const urlsToCache = [
-    './',
-    './index.html',
-    './style.css',
-    './script.js',
-    './manifest.json',
-    './icons/icon-192x192.png',
-    './icons/icon-512x512.png'
+    '/',
+    '/index.html',
+    '/style.css',
+    '/script.js',
+    '/manifest.json',
+    '/icons/icon-192x192.png',
+    '/icons/icon-512x512.png'
 ];
 
-// Óñòàíîâêà Service Worker è êåøèðîâàíèå ôàéëîâ
+// Установка Service Worker и кеширование файлов
 self.addEventListener('install', event => {
     console.log('Service Worker installing...');
     event.waitUntil(
@@ -27,7 +27,7 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Àêòèâàöèÿ è î÷èñòêà ñòàðûõ êåøåé
+// Активация и очистка старых кешей
 self.addEventListener('activate', event => {
     console.log('Service Worker activating...');
     event.waitUntil(
@@ -45,7 +45,7 @@ self.addEventListener('activate', event => {
     self.clients.claim();
 });
 
-// Îáðàáîòêà fetch çàïðîñîâ (îôëàéí ðåæèì)
+// Обработка fetch запросов (офлайн режим)
 self.addEventListener('fetch', event => {
     event.respondWith(
         caches.match(event.request)
@@ -70,14 +70,14 @@ self.addEventListener('fetch', event => {
     );
 });
 
-// Îáðàáîòêà push óâåäîìëåíèé
+// Обработка push уведомлений
 self.addEventListener('push', event => {
     let data = {
         title: 'Focus Timer',
-        body: 'Âðåìÿ âûøëî!',
-        icon: '/pwa/icons/icon-192x192.png'
+        body: 'Время вышло!',
+        icon: '/icons/icon-192x192.png'
     };
-
+    
     if (event.data) {
         try {
             data = event.data.json();
@@ -85,27 +85,27 @@ self.addEventListener('push', event => {
             data.body = event.data.text();
         }
     }
-
+    
     const options = {
         body: data.body,
         icon: data.icon,
-        badge: '/pwa/icons/icon-72x72.png',
+        badge: '/icons/icon-192x192.png',
         vibrate: [200, 100, 200],
         data: {
-            url: data.url || '/pwa/'
+            url: data.url || '/'
         }
     };
-
+    
     event.waitUntil(
         self.registration.showNotification(data.title, options)
     );
 });
 
-// Îáðàáîòêà êëèêà ïî óâåäîìëåíèþ
+// Обработка клика по уведомлению
 self.addEventListener('notificationclick', event => {
     console.log('Notification clicked:', event);
     event.notification.close();
-
+    
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then(windowClients => {
@@ -121,14 +121,14 @@ self.addEventListener('notificationclick', event => {
     );
 });
 
-// Îáðàáîòêà ñîîáùåíèé îò îñíîâíîãî ïîòîêà
+// Обработка сообщений от основного потока
 self.addEventListener('message', event => {
     console.log('Message received in SW:', event.data);
     if (event.data.type === 'SHOW_NOTIFICATION') {
         self.registration.showNotification(event.data.title, {
             body: event.data.body,
-            icon: event.data.icon || '/pwa/icons/icon-192x192.png',
-            badge: '/pwa/icons/icon-72x72.png',
+            icon: event.data.icon || '/icons/icon-192x192.png',
+            badge: '/icons/icon-192x192.png',
             vibrate: [200, 100, 200]
         }).catch(error => {
             console.error('Failed to show notification:', error);
