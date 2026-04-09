@@ -9,6 +9,7 @@ class FocusTimer {
         this.sessionsCompleted = 0;
         this.totalFocusMinutes = 0;
         this.history = [];
+        this.timerEndTime = null;
         
         this.notificationsEnabled = true;
         this.soundEnabled = true;
@@ -43,6 +44,52 @@ class FocusTimer {
         this.updateDisplay();
         this.renderHistory();
         this.initAudio();
+        await this.syncTimerOnOpen();
+    }
+    
+    async syncTimerOnOpen() {
+        const savedEndTime = localStorage.getItem('timerEndTime');
+        const savedMode = localStorage.getItem('timerMode');
+        
+        if (savedEndTime && savedMode) {
+            const now = Date.now();
+            const endTime = parseInt(savedEndTime);
+            const timeLeft = Math.floor((endTime - now) / 1000);
+            
+            if (timeLeft > 0 && timeLeft <= this.modes[savedMode].time) {
+                // Таймер всё ещё активен
+                console.log(`Restoring timer: ${savedMode} with ${timeLeft} seconds left`);
+                this.currentMode = savedMode;
+                this.timeLeft = timeLeft;
+                this.updateDisplay();
+                
+                // Обновляем активную кнопку
+                document.querySelectorAll('.mode-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    if (btn.dataset.mode === savedMode) {
+                        btn.classList.add('active');
+                    }
+                });
+                
+                // Автоматически продолжаем таймер
+                this.start();
+            } else if (timeLeft <= 0) {
+                // Таймер истёк
+                console.log('Timer expired while app was closed');
+                localStorage.removeItem('timerEndTime');
+                localStorage.removeItem('timerMode');
+                
+                // Переключаем режим
+                if (savedMode === 'focus') {
+                    this.switchMode('shortBreak');
+                } else {
+                    this.switchMode('focus');
+                }
+            } else {
+                localStorage.removeItem('timerEndTime');
+                localStorage.removeItem('timerMode');
+            }
+        }
     }
     
     setupEventListeners() {
@@ -123,10 +170,31 @@ class FocusTimer {
         this.startBtn.disabled = true;
         this.pauseBtn.disabled = false;
         
+        // Сохраняем время окончания
+        this.timerEndTime = Date.now() + (this.timeLeft * 1000);
+        
+        // Сохраняем в localStorage
+        localStorage.setItem('timerEndTime', this.timerEndTime);
+        localStorage.setItem('timerMode', this.currentMode);
+        
+        // Отправляем в Service Worker
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'START_TIMER',
+                endTime: this.timerEndTime,
+                mode: this.currentMode
+            });
+        }
+        
+        // Локальный таймер для обновления интерфейса
         this.timer = setInterval(() => {
             if (this.timeLeft > 0) {
                 this.timeLeft--;
                 this.updateDisplay();
+                
+                // Обновляем сохранённое время каждую секунду
+                this.timerEndTime = Date.now() + (this.timeLeft * 1000);
+                localStorage.setItem('timerEndTime', this.timerEndTime);
             } else {
                 this.timeUp();
             }
@@ -140,6 +208,17 @@ class FocusTimer {
         this.isRunning = false;
         this.startBtn.disabled = false;
         this.pauseBtn.disabled = true;
+        
+        // Сообщаем Service Worker остановить таймер
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'STOP_TIMER'
+            });
+        }
+        
+        // Очищаем сохранённое время
+        localStorage.removeItem('timerEndTime');
+        localStorage.removeItem('timerMode');
     }
     
     reset() {
@@ -152,7 +231,10 @@ class FocusTimer {
     async timeUp() {
         this.pause();
         
-        if (this.currentMode === 'focus') {
+        const isFocusMode = (this.currentMode === 'focus');
+        
+        // Сохраняем завершенную сессию (только для фокуса)
+        if (isFocusMode) {
             this.sessionsCompleted++;
             const focusMinutes = this.modes.focus.time / 60;
             this.totalFocusMinutes += focusMinutes;
@@ -171,22 +253,23 @@ class FocusTimer {
             this.renderHistory();
         }
         
-        if (this.notificationsEnabled) {
-            this.sendNotification(
-                this.currentMode === 'focus' ? 'Время вышло!' : 'Перерыв окончен!',
-                this.currentMode === 'focus' ? 'Отличная работа! Время сделать перерыв 🎉' : 'Пора возвращаться к работе! 💪'
-            );
-        }
+        // Уведомления НЕ отправляем отсюда — они в Service Worker
         
+        // Воспроизводим звук
         if (this.soundEnabled) {
             await this.playSoundEnhanced();
         }
         
         this.saveData();
         
-        if (this.currentMode === 'focus') {
+        // Очищаем сохранённое время
+        localStorage.removeItem('timerEndTime');
+        localStorage.removeItem('timerMode');
+        
+        // Автоматически переключаем на следующий режим
+        if (isFocusMode) {
             this.switchMode('shortBreak');
-        } else if (this.currentMode === 'shortBreak') {
+        } else {
             this.switchMode('focus');
         }
     }
@@ -302,26 +385,6 @@ class FocusTimer {
         `).join('');
     }
     
-    async sendNotification(title, body) {
-        if ('Notification' in window && Notification.permission === 'granted') {
-            const iconPath = '/icons/icon-192x192.png';
-            
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'SHOW_NOTIFICATION',
-                    title: title,
-                    body: body,
-                    icon: iconPath
-                });
-            } else {
-                new Notification(title, { 
-                    body: body, 
-                    icon: iconPath 
-                });
-            }
-        }
-    }
-    
     async requestNotificationPermission() {
         if ('Notification' in window) {
             const permission = await Notification.requestPermission();
@@ -332,22 +395,17 @@ class FocusTimer {
     }
     
     async registerServiceWorker() {
-    if ('serviceWorker' in navigator) {
-        try {
-            // Определяем правильный путь к sw.js
-            const swPath = window.location.pathname.includes('timer-pomodoro.github.io') 
-                ? '/timer-pomodoro.github.io/sw.js' 
-                : '/sw.js';
-            
-            console.log('Registering SW at:', swPath);
-            
-            const registration = await navigator.serviceWorker.register(swPath);
-            console.log('Service Worker registered:', registration);
-        } catch (error) {
-            console.error('Service Worker registration failed:', error);
+        if ('serviceWorker' in navigator) {
+            try {
+                const registration = await navigator.serviceWorker.register('sw.js', {
+                    scope: '.'
+                });
+                console.log('Service Worker registered:', registration);
+            } catch (error) {
+                console.error('Service Worker registration failed:', error);
+            }
         }
     }
-}
     
     async loadData() {
         const data = localStorage.getItem('focusTimer');
@@ -403,6 +461,7 @@ class FocusTimer {
     }
 }
 
+// Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new FocusTimer();
 });
