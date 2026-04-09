@@ -188,67 +188,76 @@ class FocusTimer {
         this.updateDisplay();
         this.saveData();
     }
+
+start() {
+    if (this.isRunning) return;
     
-    start() {
-        if (this.isRunning) return;
-        
-        this.isRunning = true;
-        this.startBtn.disabled = true;
-        this.pauseBtn.disabled = false;
-        
-        // Сохраняем время окончания (абсолютное время)
-        this.timerEndTime = Date.now() + (this.timeLeft * 1000);
-        
-        // Сохраняем в localStorage
-        localStorage.setItem('timerEndTime', this.timerEndTime);
-        localStorage.setItem('timerMode', this.currentMode);
-        
-        // Отправляем в Service Worker
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
+    this.isRunning = true;
+    this.startBtn.disabled = true;
+    this.pauseBtn.disabled = false;
+    
+    // Сохраняем время окончания (абсолютное время)
+    this.timerEndTime = Date.now() + (this.timeLeft * 1000);
+    
+    // Сохраняем в localStorage (для синхронизации при открытии)
+    localStorage.setItem('timerEndTime', this.timerEndTime);
+    localStorage.setItem('timerMode', this.currentMode);
+    
+    // Отправляем в Service Worker
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: 'START_TIMER',
+            endTime: this.timerEndTime,
+            mode: this.currentMode
+        });
+    } else {
+        // Если SW ещё не контролирует страницу, регистрируем заново
+        navigator.serviceWorker.ready.then(registration => {
+            registration.active.postMessage({
                 type: 'START_TIMER',
                 endTime: this.timerEndTime,
                 mode: this.currentMode
             });
-        }
-        
-        // Локальный таймер для обновления интерфейса
-        this.timer = setInterval(() => {
-            if (this.timerEndTime) {
-                const now = Date.now();
-                const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
-                
-                if (remaining !== this.timeLeft) {
-                    this.timeLeft = remaining;
-                    this.updateDisplay();
-                }
-                
-                if (remaining <= 0) {
-                    this.timeUp();
-                }
-            }
-        }, 100);
+        });
     }
     
-    pause() {
-        if (!this.isRunning) return;
-        
-        clearInterval(this.timer);
-        this.isRunning = false;
-        this.startBtn.disabled = false;
-        this.pauseBtn.disabled = true;
-        
-        // Сообщаем Service Worker остановить таймер
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'STOP_TIMER'
-            });
+    // Локальный таймер для обновления интерфейса
+    this.timer = setInterval(() => {
+        if (this.timerEndTime) {
+            const now = Date.now();
+            const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
+            
+            if (remaining !== this.timeLeft) {
+                this.timeLeft = remaining;
+                this.updateDisplay();
+            }
+            
+            if (remaining <= 0) {
+                this.timeUp();
+            }
         }
-        
-        // Очищаем сохранённое время
-        localStorage.removeItem('timerEndTime');
-        localStorage.removeItem('timerMode');
+    }, 100);
+}
+
+pause() {
+    if (!this.isRunning) return;
+    
+    clearInterval(this.timer);
+    this.isRunning = false;
+    this.startBtn.disabled = false;
+    this.pauseBtn.disabled = true;
+    
+    // Сообщаем Service Worker остановить таймер
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+            type: 'STOP_TIMER'
+        });
     }
+    
+    // Очищаем сохранённое время
+    localStorage.removeItem('timerEndTime');
+    localStorage.removeItem('timerMode');
+}
     
     reset() {
         this.pause();
