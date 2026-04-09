@@ -1,57 +1,92 @@
 // Service Worker для Focus Timer PWA
-const CACHE_NAME = 'focus-timer-v5';
+const CACHE_NAME = 'focus-timer-v6';
 
-// Хранилище для времени окончания таймера
-let timerEndTime = null;
-let currentMode = null;
+// Функции для работы с IndexedDB в SW
+let db = null;
+
+// Открываем базу данных
+function openDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open('FocusTimerDB', 1);
+        
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('timerState')) {
+                db.createObjectStore('timerState', { keyPath: 'id' });
+            }
+        };
+    });
+}
+
+// Сохраняем состояние таймера
+async function saveTimerState(endTime, mode) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['timerState'], 'readwrite');
+        const store = transaction.objectStore('timerState');
+        const request = store.put({ id: 'current', endTime, mode });
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+    });
+}
+
+// Загружаем состояние таймера
+async function loadTimerState() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['timerState'], 'readonly');
+        const store = transaction.objectStore('timerState');
+        const request = store.get('current');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result);
+    });
+}
+
+// Удаляем состояние
+async function clearTimerState() {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['timerState'], 'readwrite');
+        const store = transaction.objectStore('timerState');
+        const request = store.delete('current');
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve();
+    });
+}
+
 let checkInterval = null;
 
-// Получение сообщений от приложения
-self.addEventListener('message', event => {
-    console.log('SW received message:', event.data);
-    
-    if (event.data.type === 'START_TIMER') {
-        // Сохраняем время окончания и режим
-        timerEndTime = event.data.endTime;
-        currentMode = event.data.mode;
-        console.log(`Timer set for ${currentMode} until:`, new Date(timerEndTime));
-        
-        // Запускаем проверку если ещё не запущена
-        if (!checkInterval) {
-            startTimerCheck();
-        }
-    }
-    
-    if (event.data.type === 'STOP_TIMER') {
-        timerEndTime = null;
-        currentMode = null;
-        if (checkInterval) {
-            clearInterval(checkInterval);
-            checkInterval = null;
-        }
-        console.log('Timer stopped');
-    }
-});
-
 // Запуск периодической проверки
-function startTimerCheck() {
-    checkInterval = setInterval(() => {
-        if (timerEndTime) {
+async function startTimerCheck() {
+    if (checkInterval) return;
+    
+    // Проверяем сохранённое состояние при запуске SW
+    const savedState = await loadTimerState();
+    if (savedState && savedState.endTime > Date.now()) {
+        console.log('Found saved timer:', savedState);
+        scheduleNotification(savedState.endTime, savedState.mode);
+    }
+    
+    checkInterval = setInterval(async () => {
+        const state = await loadTimerState();
+        if (state && state.endTime) {
             const now = Date.now();
-            const timeLeft = timerEndTime - now;
+            const timeLeft = state.endTime - now;
             
             if (timeLeft <= 0) {
                 // Время вышло!
                 console.log('Timer expired! Showing notification...');
                 
-                const isFocusMode = (currentMode === 'focus');
+                const isFocusMode = (state.mode === 'focus');
                 const title = isFocusMode ? '🍅 Время вышло!' : '☕ Перерыв окончен!';
                 const body = isFocusMode 
                     ? 'Отличная работа! Время сделать перерыв!' 
                     : 'Перерыв окончен! Возвращайся к работе!';
                 
-                // Показываем уведомление
-                self.registration.showNotification(title, {
+                await self.registration.showNotification(title, {
                     body: body,
                     icon: 'icons/icon-192x192.png',
                     badge: 'icons/icon-192x192.png',
@@ -59,31 +94,46 @@ function startTimerCheck() {
                     requireInteraction: true,
                     tag: 'timer-expired',
                     data: {
-                        mode: currentMode,
+                        mode: state.mode,
                         timestamp: Date.now()
                     }
                 });
                 
-                timerEndTime = null;
-                currentMode = null;
-                clearInterval(checkInterval);
-                checkInterval = null;
-            } else if (timeLeft <= 5000 && timeLeft > 0) {
-                // За 5 секунд до окончания отправляем предупреждение
-                console.log('Warning: 5 seconds left');
-                self.registration.showNotification('⏰ Скоро закончится!', {
-                    body: `Осталось ${Math.ceil(timeLeft / 1000)} секунд`,
-                    icon: 'icons/icon-192x192.png',
-                    badge: 'icons/icon-192x192.png',
-                    vibrate: [100],
-                    tag: 'timer-warning'
-                });
+                await clearTimerState();
             }
         }
     }, 1000);
 }
 
-// Установка Service Worker и кеширование файлов
+// Запланировать уведомление
+async function scheduleNotification(endTime, mode) {
+    const delay = endTime - Date.now();
+    console.log(`Scheduling notification in ${Math.floor(delay / 1000)} seconds`);
+    
+    if (delay <= 0) return;
+    
+    // Сохраняем в IndexedDB
+    await saveTimerState(endTime, mode);
+}
+
+// Получение сообщений от приложения
+self.addEventListener('message', async (event) => {
+    console.log('SW received message:', event.data);
+    
+    if (event.data.type === 'START_TIMER') {
+        // Сохраняем в IndexedDB
+        await scheduleNotification(event.data.endTime, event.data.mode);
+        await startTimerCheck();
+        console.log(`Timer scheduled for ${event.data.mode} until:`, new Date(event.data.endTime));
+    }
+    
+    if (event.data.type === 'STOP_TIMER') {
+        await clearTimerState();
+        console.log('Timer stopped and cleared');
+    }
+});
+
+// Установка Service Worker
 self.addEventListener('install', event => {
     console.log('Service Worker installing...');
     event.waitUntil(
@@ -103,12 +153,16 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Активация и очистка старых кешей
-self.addEventListener('activate', event => {
+// Активация
+self.addEventListener('activate', async (event) => {
     console.log('Service Worker activating...');
+    
+    // При активации запускаем проверку
     event.waitUntil(
-        caches.keys().then(cacheNames => {
-            return Promise.all(
+        (async () => {
+            // Очищаем старые кеши
+            const cacheNames = await caches.keys();
+            await Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheName !== CACHE_NAME) {
                         console.log('Deleting old cache:', cacheName);
@@ -116,33 +170,19 @@ self.addEventListener('activate', event => {
                     }
                 })
             );
-        })
+            
+            // Запускаем проверку таймера
+            await startTimerCheck();
+            self.clients.claim();
+        })()
     );
-    self.clients.claim();
 });
 
 // Обработка fetch запросов (офлайн режим)
 self.addEventListener('fetch', event => {
     event.respondWith(
         caches.match(event.request)
-            .then(response => {
-                if (response) {
-                    return response;
-                }
-                return fetch(event.request).then(
-                    response => {
-                        if (!response || response.status !== 200) {
-                            return response;
-                        }
-                        const responseToCache = response.clone();
-                        caches.open(CACHE_NAME)
-                            .then(cache => {
-                                cache.put(event.request, responseToCache);
-                            });
-                        return response;
-                    }
-                );
-            })
+            .then(response => response || fetch(event.request))
     );
 });
 
@@ -152,16 +192,13 @@ self.addEventListener('notificationclick', event => {
     event.notification.close();
     
     const mode = event.notification.data?.mode;
+    const targetUrl = '/timer-pomodoro.github.io/';
     
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then(windowClients => {
-                const targetUrl = '/timer-pomodoro.github.io/';
-                
-                // Если окно уже открыто, фокусируем его
                 for (let client of windowClients) {
                     if (client.url.includes('timer-pomodoro') && 'focus' in client) {
-                        // Отправляем информацию о том, какой режим был
                         client.postMessage({
                             type: 'NOTIFICATION_CLICKED',
                             mode: mode
@@ -169,7 +206,6 @@ self.addEventListener('notificationclick', event => {
                         return client.focus();
                     }
                 }
-                // Иначе открываем новое окно
                 if (clients.openWindow) {
                     return clients.openWindow(targetUrl);
                 }
