@@ -109,13 +109,18 @@ self.addEventListener('notificationclick', event => {
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true })
             .then(windowClients => {
+                // Правильный путь к вашему сайту
+                const targetUrl = '/timer-pomodoro.github.io/';
+                
+                // Если окно уже открыто, фокусируем его
                 for (let client of windowClients) {
-                    if (client.url === '/' && 'focus' in client) {
+                    if (client.url.includes('timer-pomodoro.github.io') && 'focus' in client) {
                         return client.focus();
                     }
                 }
+                // Иначе открываем новое окно по правильному пути
                 if (clients.openWindow) {
-                    return clients.openWindow('/');
+                    return clients.openWindow(targetUrl);
                 }
             })
     );
