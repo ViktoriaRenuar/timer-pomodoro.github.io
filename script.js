@@ -45,6 +45,31 @@ class FocusTimer {
         this.renderHistory();
         this.initAudio();
         await this.syncTimerOnOpen();
+        
+        // Запускаем синхронизацию каждую секунду
+        this.startSyncInterval();
+    }
+    
+    // Синхронизация времени каждую секунду
+    startSyncInterval() {
+        setInterval(() => {
+            if (this.isRunning && this.timerEndTime) {
+                const now = Date.now();
+                const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
+                
+                // Если расхождение больше 1 секунды — синхронизируем
+                if (Math.abs(remaining - this.timeLeft) > 1) {
+                    console.log(`Sync: was ${this.timeLeft}s, now ${remaining}s`);
+                    this.timeLeft = remaining;
+                    this.updateDisplay();
+                    
+                    // Если время истекло
+                    if (this.timeLeft <= 0) {
+                        this.timeUp();
+                    }
+                }
+            }
+        }, 1000);
     }
     
     async syncTimerOnOpen() {
@@ -54,13 +79,15 @@ class FocusTimer {
         if (savedEndTime && savedMode) {
             const now = Date.now();
             const endTime = parseInt(savedEndTime);
-            const timeLeft = Math.floor((endTime - now) / 1000);
+            const timeLeft = Math.max(0, Math.floor((endTime - now) / 1000));
+            
+            console.log(`Syncing on open: saved endTime=${new Date(endTime)}, now=${new Date(now)}, timeLeft=${timeLeft}s`);
             
             if (timeLeft > 0 && timeLeft <= this.modes[savedMode].time) {
                 // Таймер всё ещё активен
-                console.log(`Restoring timer: ${savedMode} with ${timeLeft} seconds left`);
                 this.currentMode = savedMode;
                 this.timeLeft = timeLeft;
+                this.timerEndTime = endTime;
                 this.updateDisplay();
                 
                 // Обновляем активную кнопку
@@ -72,7 +99,9 @@ class FocusTimer {
                 });
                 
                 // Автоматически продолжаем таймер
-                this.start();
+                if (!this.isRunning) {
+                    this.start();
+                }
             } else if (timeLeft <= 0) {
                 // Таймер истёк
                 console.log('Timer expired while app was closed');
@@ -85,9 +114,6 @@ class FocusTimer {
                 } else {
                     this.switchMode('focus');
                 }
-            } else {
-                localStorage.removeItem('timerEndTime');
-                localStorage.removeItem('timerMode');
             }
         }
     }
@@ -170,7 +196,7 @@ class FocusTimer {
         this.startBtn.disabled = true;
         this.pauseBtn.disabled = false;
         
-        // Сохраняем время окончания
+        // Сохраняем время окончания (абсолютное время)
         this.timerEndTime = Date.now() + (this.timeLeft * 1000);
         
         // Сохраняем в localStorage
@@ -188,17 +214,20 @@ class FocusTimer {
         
         // Локальный таймер для обновления интерфейса
         this.timer = setInterval(() => {
-            if (this.timeLeft > 0) {
-                this.timeLeft--;
-                this.updateDisplay();
+            if (this.timerEndTime) {
+                const now = Date.now();
+                const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
                 
-                // Обновляем сохранённое время каждую секунду
-                this.timerEndTime = Date.now() + (this.timeLeft * 1000);
-                localStorage.setItem('timerEndTime', this.timerEndTime);
-            } else {
-                this.timeUp();
+                if (remaining !== this.timeLeft) {
+                    this.timeLeft = remaining;
+                    this.updateDisplay();
+                }
+                
+                if (remaining <= 0) {
+                    this.timeUp();
+                }
             }
-        }, 1000);
+        }, 100);
     }
     
     pause() {
@@ -224,6 +253,7 @@ class FocusTimer {
     reset() {
         this.pause();
         this.timeLeft = this.modes[this.currentMode].time;
+        this.timerEndTime = null;
         this.updateDisplay();
         this.saveData();
     }
