@@ -1,4 +1,4 @@
-// Focus Timer PWA - Основной скрипт
+// Focus Timer PWA - Основной скрипт (с работающими локальными уведомлениями)
 
 class FocusTimer {
     constructor() {
@@ -57,13 +57,11 @@ class FocusTimer {
                 const now = Date.now();
                 const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
                 
-                // Если расхождение больше 1 секунды — синхронизируем
                 if (Math.abs(remaining - this.timeLeft) > 1) {
                     console.log(`Sync: was ${this.timeLeft}s, now ${remaining}s`);
                     this.timeLeft = remaining;
                     this.updateDisplay();
                     
-                    // Если время истекло
                     if (this.timeLeft <= 0) {
                         this.timeUp();
                     }
@@ -81,16 +79,12 @@ class FocusTimer {
             const endTime = parseInt(savedEndTime);
             const timeLeft = Math.max(0, Math.floor((endTime - now) / 1000));
             
-            console.log(`Syncing on open: saved endTime=${new Date(endTime)}, now=${new Date(now)}, timeLeft=${timeLeft}s`);
-            
             if (timeLeft > 0 && timeLeft <= this.modes[savedMode].time) {
-                // Таймер всё ещё активен
                 this.currentMode = savedMode;
                 this.timeLeft = timeLeft;
                 this.timerEndTime = endTime;
                 this.updateDisplay();
                 
-                // Обновляем активную кнопку
                 document.querySelectorAll('.mode-btn').forEach(btn => {
                     btn.classList.remove('active');
                     if (btn.dataset.mode === savedMode) {
@@ -98,17 +92,13 @@ class FocusTimer {
                     }
                 });
                 
-                // Автоматически продолжаем таймер
                 if (!this.isRunning) {
                     this.start();
                 }
             } else if (timeLeft <= 0) {
-                // Таймер истёк
-                console.log('Timer expired while app was closed');
                 localStorage.removeItem('timerEndTime');
                 localStorage.removeItem('timerMode');
                 
-                // Переключаем режим
                 if (savedMode === 'focus') {
                     this.switchMode('shortBreak');
                 } else {
@@ -188,76 +178,62 @@ class FocusTimer {
         this.updateDisplay();
         this.saveData();
     }
-
-start() {
-    if (this.isRunning) return;
     
-    this.isRunning = true;
-    this.startBtn.disabled = true;
-    this.pauseBtn.disabled = false;
-    
-    // Сохраняем время окончания (абсолютное время)
-    this.timerEndTime = Date.now() + (this.timeLeft * 1000);
-    
-    // Сохраняем в localStorage (для синхронизации при открытии)
-    localStorage.setItem('timerEndTime', this.timerEndTime);
-    localStorage.setItem('timerMode', this.currentMode);
-    
-    // Отправляем в Service Worker
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-            type: 'START_TIMER',
-            endTime: this.timerEndTime,
-            mode: this.currentMode
-        });
-    } else {
-        // Если SW ещё не контролирует страницу, регистрируем заново
-        navigator.serviceWorker.ready.then(registration => {
-            registration.active.postMessage({
+    start() {
+        if (this.isRunning) return;
+        
+        this.isRunning = true;
+        this.startBtn.disabled = true;
+        this.pauseBtn.disabled = false;
+        
+        this.timerEndTime = Date.now() + (this.timeLeft * 1000);
+        
+        localStorage.setItem('timerEndTime', this.timerEndTime);
+        localStorage.setItem('timerMode', this.currentMode);
+        
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
                 type: 'START_TIMER',
                 endTime: this.timerEndTime,
                 mode: this.currentMode
             });
-        });
-    }
-    
-    // Локальный таймер для обновления интерфейса
-    this.timer = setInterval(() => {
-        if (this.timerEndTime) {
-            const now = Date.now();
-            const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
-            
-            if (remaining !== this.timeLeft) {
-                this.timeLeft = remaining;
-                this.updateDisplay();
-            }
-            
-            if (remaining <= 0) {
-                this.timeUp();
-            }
         }
-    }, 100);
-}
-
-pause() {
-    if (!this.isRunning) return;
-    
-    clearInterval(this.timer);
-    this.isRunning = false;
-    this.startBtn.disabled = false;
-    this.pauseBtn.disabled = true;
-    
-    // Сообщаем Service Worker остановить таймер
-    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-        navigator.serviceWorker.controller.postMessage({
-            type: 'STOP_TIMER'
-        });
+        
+        // Локальный таймер для обновления интерфейса
+        this.timer = setInterval(() => {
+            if (this.timerEndTime) {
+                const now = Date.now();
+                const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
+                
+                if (remaining !== this.timeLeft) {
+                    this.timeLeft = remaining;
+                    this.updateDisplay();
+                }
+                
+                if (remaining <= 0) {
+                    this.timeUp();
+                }
+            }
+        }, 100);
     }
     
-    // Очищаем сохранённое время
-    localStorage.removeItem('timerEndTime');
-    localStorage.removeItem('timerMode');
-}
+    pause() {
+        if (!this.isRunning) return;
+        
+        clearInterval(this.timer);
+        this.isRunning = false;
+        this.startBtn.disabled = false;
+        this.pauseBtn.disabled = true;
+        
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+                type: 'STOP_TIMER'
+            });
+        }
+        
+        localStorage.removeItem('timerEndTime');
+        localStorage.removeItem('timerMode');
+    }
     
     reset() {
         this.pause();
@@ -292,7 +268,30 @@ pause() {
             this.renderHistory();
         }
         
-        // Уведомления НЕ отправляем отсюда — они в Service Worker
+        // 🔔 ЛОКАЛЬНОЕ УВЕДОМЛЕНИЕ — ВОТ ЭТОТ КОД ВОЗВРАЩАЕМ!
+        if (this.notificationsEnabled) {
+            const title = isFocusMode ? '🍅 Время вышло!' : '☕ Перерыв окончен!';
+            const body = isFocusMode 
+                ? 'Отличная работа! Время сделать перерыв 🎉' 
+                : 'Пора возвращаться к работе! 💪';
+            
+            // Показываем уведомление через Service Worker (лучше работает)
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'SHOW_NOTIFICATION',
+                    title: title,
+                    body: body,
+                    icon: 'icons/icon-192x192.png'
+                });
+            } 
+            // Запасной вариант — обычное уведомление
+            else if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { 
+                    body: body, 
+                    icon: 'icons/icon-192x192.png' 
+                });
+            }
+        }
         
         // Воспроизводим звук
         if (this.soundEnabled) {
@@ -301,7 +300,6 @@ pause() {
         
         this.saveData();
         
-        // Очищаем сохранённое время
         localStorage.removeItem('timerEndTime');
         localStorage.removeItem('timerMode');
         
@@ -428,7 +426,9 @@ pause() {
         if ('Notification' in window) {
             const permission = await Notification.requestPermission();
             if (permission === 'granted') {
-                console.log('Notification permission granted');
+                console.log('✅ Notification permission granted');
+            } else {
+                console.warn('❌ Notification permission denied');
             }
         }
     }
@@ -439,9 +439,9 @@ pause() {
                 const registration = await navigator.serviceWorker.register('sw.js', {
                     scope: '.'
                 });
-                console.log('Service Worker registered:', registration);
+                console.log('✅ Service Worker registered:', registration);
             } catch (error) {
-                console.error('Service Worker registration failed:', error);
+                console.error('❌ Service Worker registration failed:', error);
             }
         }
     }
