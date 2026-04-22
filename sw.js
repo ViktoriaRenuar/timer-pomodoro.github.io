@@ -1,9 +1,8 @@
 // Service Worker для Focus Timer PWA
-const CACHE_NAME = 'focus-timer-v6';
+const CACHE_NAME = 'focus-timer-v7';
 
-// Установка Service Worker
 self.addEventListener('install', event => {
-    console.log('Service Worker installing...');
+    console.log('🔧 SW installing...');
     event.waitUntil(
         caches.open(CACHE_NAME).then(cache => {
             return cache.addAll([
@@ -20,14 +19,14 @@ self.addEventListener('install', event => {
     self.skipWaiting();
 });
 
-// Активация
 self.addEventListener('activate', event => {
-    console.log('Service Worker activating...');
+    console.log('🔧 SW activating...');
     event.waitUntil(
         caches.keys().then(cacheNames => {
             return Promise.all(
                 cacheNames.map(cacheName => {
                     if (cacheName !== CACHE_NAME) {
+                        console.log('🗑️ Deleting old cache:', cacheName);
                         return caches.delete(cacheName);
                     }
                 })
@@ -35,19 +34,18 @@ self.addEventListener('activate', event => {
         })
     );
     self.clients.claim();
+    console.log('✅ SW activated');
 });
 
-// Обработка fetch для офлайн-режима
 self.addEventListener('fetch', event => {
     event.respondWith(
-        caches.match(event.request)
-            .then(response => response || fetch(event.request))
+        caches.match(event.request).then(response => response || fetch(event.request))
     );
 });
 
-// 🆕 Обработка сообщений от приложения (для уведомлений)
+// 🆕 Обработка сообщений от приложения
 self.addEventListener('message', event => {
-    console.log('SW received message:', event.data);
+    console.log('📨 SW received:', event.data);
     
     if (event.data.type === 'SHOW_NOTIFICATION') {
         self.registration.showNotification(event.data.title, {
@@ -56,29 +54,31 @@ self.addEventListener('message', event => {
             badge: 'icons/icon-192x192.png',
             vibrate: [200, 100, 200],
             requireInteraction: true,
-            tag: 'focus-timer'
-        });
+            silent: false,
+            tag: 'focus-timer-' + Date.now()
+        }).then(() => console.log('✅ Notification shown')).catch(err => console.error('❌ Notification error:', err));
+    }
+    
+    if (event.data.type === 'START_TIMER') {
+        console.log('⏰ Timer scheduled:', new Date(event.data.endTime));
+    }
+    
+    if (event.data.type === 'STOP_TIMER') {
+        console.log('⏹️ Timer stopped');
     }
 });
 
-// Обработка клика по уведомлению
 self.addEventListener('notificationclick', event => {
-    console.log('Notification clicked:', event);
+    console.log('👆 Notification clicked');
     event.notification.close();
-    
     event.waitUntil(
-        clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(windowClients => {
-                const targetUrl = '/timer-pomodoro.github.io/';
-                
-                for (let client of windowClients) {
-                    if (client.url.includes('timer-pomodoro') && 'focus' in client) {
-                        return client.focus();
-                    }
+        clients.matchAll({ type: 'window', includeUncontrolled: true }).then(windowClients => {
+            for (let client of windowClients) {
+                if (client.url.includes('timer-pomodoro') && 'focus' in client) {
+                    return client.focus();
                 }
-                if (clients.openWindow) {
-                    return clients.openWindow(targetUrl);
-                }
-            })
+            }
+            return clients.openWindow('/timer-pomodoro.github.io/');
+        })
     );
 });
