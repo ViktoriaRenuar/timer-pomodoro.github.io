@@ -1,4 +1,4 @@
-// Focus Timer PWA - Основной скрипт (с работающими локальными уведомлениями)
+// Focus Timer PWA - Основной скрипт (работающие уведомления на ПК и телефоне)
 
 class FocusTimer {
     constructor() {
@@ -39,18 +39,15 @@ class FocusTimer {
         await this.loadData();
         this.setupEventListeners();
         this.requestNotificationPermission();
-        this.registerServiceWorker();
+        await this.registerServiceWorker();
         this.checkInstallPrompt();
         this.updateDisplay();
         this.renderHistory();
         this.initAudio();
         await this.syncTimerOnOpen();
-        
-        // Запускаем синхронизацию каждую секунду
         this.startSyncInterval();
     }
     
-    // Синхронизация времени каждую секунду
     startSyncInterval() {
         setInterval(() => {
             if (this.isRunning && this.timerEndTime) {
@@ -58,7 +55,6 @@ class FocusTimer {
                 const remaining = Math.max(0, Math.floor((this.timerEndTime - now) / 1000));
                 
                 if (Math.abs(remaining - this.timeLeft) > 1) {
-                    console.log(`Sync: was ${this.timeLeft}s, now ${remaining}s`);
                     this.timeLeft = remaining;
                     this.updateDisplay();
                     
@@ -191,15 +187,20 @@ class FocusTimer {
         localStorage.setItem('timerEndTime', this.timerEndTime);
         localStorage.setItem('timerMode', this.currentMode);
         
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'START_TIMER',
-                endTime: this.timerEndTime,
-                mode: this.currentMode
+        // Отправляем в Service Worker (через ready)
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(registration => {
+                if (registration.active) {
+                    registration.active.postMessage({
+                        type: 'START_TIMER',
+                        endTime: this.timerEndTime,
+                        mode: this.currentMode
+                    });
+                    console.log('✅ START_TIMER sent to SW');
+                }
             });
         }
         
-        // Локальный таймер для обновления интерфейса
         this.timer = setInterval(() => {
             if (this.timerEndTime) {
                 const now = Date.now();
@@ -225,9 +226,12 @@ class FocusTimer {
         this.startBtn.disabled = false;
         this.pauseBtn.disabled = true;
         
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'STOP_TIMER'
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.ready.then(registration => {
+                if (registration.active) {
+                    registration.active.postMessage({ type: 'STOP_TIMER' });
+                    console.log('✅ STOP_TIMER sent to SW');
+                }
             });
         }
         
@@ -248,7 +252,6 @@ class FocusTimer {
         
         const isFocusMode = (this.currentMode === 'focus');
         
-        // Сохраняем завершенную сессию (только для фокуса)
         if (isFocusMode) {
             this.sessionsCompleted++;
             const focusMinutes = this.modes.focus.time / 60;
@@ -268,32 +271,35 @@ class FocusTimer {
             this.renderHistory();
         }
         
-        // 🔔 ЛОКАЛЬНОЕ УВЕДОМЛЕНИЕ — ВОТ ЭТОТ КОД ВОЗВРАЩАЕМ!
+        // 🔔 ОТПРАВКА УВЕДОМЛЕНИЯ (работает на ПК и телефоне)
         if (this.notificationsEnabled) {
             const title = isFocusMode ? '🍅 Время вышло!' : '☕ Перерыв окончен!';
             const body = isFocusMode 
                 ? 'Отличная работа! Время сделать перерыв 🎉' 
                 : 'Пора возвращаться к работе! 💪';
             
-            // Показываем уведомление через Service Worker (лучше работает)
-            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-                navigator.serviceWorker.controller.postMessage({
-                    type: 'SHOW_NOTIFICATION',
-                    title: title,
-                    body: body,
-                    icon: 'icons/icon-192x192.png'
-                });
+            // Способ 1: Через Service Worker
+            if ('serviceWorker' in navigator) {
+                const registration = await navigator.serviceWorker.ready;
+                if (registration.active) {
+                    registration.active.postMessage({
+                        type: 'SHOW_NOTIFICATION',
+                        title: title,
+                        body: body,
+                        icon: 'icons/icon-192x192.png'
+                    });
+                    console.log('✅ Notification sent to SW');
+                } else {
+                    console.log('⚠️ SW not active, using fallback');
+                    this.showFallbackNotification(title, body);
+                }
             } 
-            // Запасной вариант — обычное уведомление
-            else if ('Notification' in window && Notification.permission === 'granted') {
-                new Notification(title, { 
-                    body: body, 
-                    icon: 'icons/icon-192x192.png' 
-                });
+            // Способ 2: Запасной вариант
+            else {
+                this.showFallbackNotification(title, body);
             }
         }
         
-        // Воспроизводим звук
         if (this.soundEnabled) {
             await this.playSoundEnhanced();
         }
@@ -303,7 +309,6 @@ class FocusTimer {
         localStorage.removeItem('timerEndTime');
         localStorage.removeItem('timerMode');
         
-        // Автоматически переключаем на следующий режим
         if (isFocusMode) {
             this.switchMode('shortBreak');
         } else {
@@ -311,85 +316,43 @@ class FocusTimer {
         }
     }
     
-    async playSoundEnhanced() {
-        const webAudioSuccess = await this.playWebAudioBeep();
-        if (webAudioSuccess) {
-            console.log('Sound played via Web Audio API');
-            return;
-        }
-        
-        const htmlAudioSuccess = await this.playHtmlAudio();
-        if (htmlAudioSuccess) {
-            console.log('Sound played via HTML5 Audio');
-            return;
+    showFallbackNotification(title, body) {
+        if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification(title, { 
+                body: body, 
+                icon: 'icons/icon-192x192.png'
+            });
+            console.log('✅ Fallback notification shown');
         }
     }
     
-    async playWebAudioBeep() {
+    async playSoundEnhanced() {
         try {
             if (!this.audioContext) {
                 this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
-            
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
             
             const now = this.audioContext.currentTime;
-            
             for (let i = 0; i < 3; i++) {
                 const oscillator = this.audioContext.createOscillator();
                 const gainNode = this.audioContext.createGain();
-                
                 oscillator.connect(gainNode);
                 gainNode.connect(this.audioContext.destination);
-                
-                const frequencies = [880, 1046.5, 1318.5];
-                oscillator.frequency.value = frequencies[i % frequencies.length];
+                oscillator.frequency.value = [880, 1046.5, 1318.5][i % 3];
                 oscillator.type = 'sine';
                 gainNode.gain.value = 0.3;
-                
                 const startTime = now + i * 0.25;
                 oscillator.start(startTime);
                 gainNode.gain.exponentialRampToValueAtTime(0.00001, startTime + 0.2);
                 oscillator.stop(startTime + 0.2);
             }
-            
-            return true;
+            console.log('✅ Sound played');
         } catch (error) {
-            console.log('Web Audio failed:', error);
-            return false;
+            console.log('Sound failed:', error);
         }
-    }
-    
-    async playHtmlAudio() {
-        const audioUrls = [
-            'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3',
-            'https://cdn.pixabay.com/download/audio/2022/03/10/audio_c8c8f0f6c4.mp3'
-        ];
-        
-        for (const url of audioUrls) {
-            try {
-                const audio = new Audio();
-                audio.src = url;
-                audio.volume = 0.5;
-                audio.load();
-                
-                await new Promise((resolve, reject) => {
-                    audio.addEventListener('canplaythrough', () => {
-                        audio.play().then(resolve).catch(reject);
-                    }, { once: true });
-                    setTimeout(() => reject(new Error('Load timeout')), 3000);
-                });
-                
-                return true;
-            } catch (error) {
-                console.log(`Failed to play ${url}:`, error);
-                continue;
-            }
-        }
-        
-        return false;
     }
     
     updateDisplay() {
@@ -410,7 +373,6 @@ class FocusTimer {
             this.historyListElem.innerHTML = '<div style="text-align: center; color: #999;">Нет завершенных сессий</div>';
             return;
         }
-        
         this.historyListElem.innerHTML = this.history.map(session => `
             <div class="history-item">
                 <div>
@@ -425,10 +387,10 @@ class FocusTimer {
     async requestNotificationPermission() {
         if ('Notification' in window) {
             const permission = await Notification.requestPermission();
-            if (permission === 'granted') {
-                console.log('✅ Notification permission granted');
-            } else {
-                console.warn('❌ Notification permission denied');
+            console.log('Notification permission:', permission);
+            this.notificationsEnabled = (permission === 'granted');
+            if (this.notificationsCheckbox) {
+                this.notificationsCheckbox.checked = this.notificationsEnabled;
             }
         }
     }
@@ -436,12 +398,23 @@ class FocusTimer {
     async registerServiceWorker() {
         if ('serviceWorker' in navigator) {
             try {
-                const registration = await navigator.serviceWorker.register('sw.js', {
-                    scope: '.'
-                });
-                console.log('✅ Service Worker registered:', registration);
+                const registration = await navigator.serviceWorker.register('sw.js', { scope: '.' });
+                console.log('✅ Service Worker registered');
+                
+                // Ждём активации
+                if (!navigator.serviceWorker.controller) {
+                    await new Promise(resolve => {
+                        const checkInterval = setInterval(() => {
+                            if (navigator.serviceWorker.controller) {
+                                clearInterval(checkInterval);
+                                resolve();
+                            }
+                        }, 100);
+                    });
+                    console.log('✅ SW now active');
+                }
             } catch (error) {
-                console.error('❌ Service Worker registration failed:', error);
+                console.error('❌ SW registration failed:', error);
             }
         }
     }
@@ -456,43 +429,34 @@ class FocusTimer {
             this.notificationsEnabled = parsed.notificationsEnabled !== false;
             this.soundEnabled = parsed.soundEnabled !== false;
             
-            if (this.notificationsCheckbox) {
-                this.notificationsCheckbox.checked = this.notificationsEnabled;
-            }
-            if (this.soundCheckbox) {
-                this.soundCheckbox.checked = this.soundEnabled;
-            }
+            if (this.notificationsCheckbox) this.notificationsCheckbox.checked = this.notificationsEnabled;
+            if (this.soundCheckbox) this.soundCheckbox.checked = this.soundEnabled;
         }
-        
         this.updateStats();
     }
     
     saveData() {
-        const data = {
+        localStorage.setItem('focusTimer', JSON.stringify({
             sessionsCompleted: this.sessionsCompleted,
             totalFocusMinutes: this.totalFocusMinutes,
             history: this.history,
             notificationsEnabled: this.notificationsEnabled,
             soundEnabled: this.soundEnabled
-        };
-        localStorage.setItem('focusTimer', JSON.stringify(data));
+        }));
     }
     
     checkInstallPrompt() {
         let deferredPrompt;
         const installBtn = document.getElementById('installBtn');
-        
         window.addEventListener('beforeinstallprompt', (e) => {
             e.preventDefault();
             deferredPrompt = e;
             if (installBtn) {
                 installBtn.style.display = 'block';
-                
                 installBtn.addEventListener('click', async () => {
                     installBtn.style.display = 'none';
                     deferredPrompt.prompt();
-                    const { outcome } = await deferredPrompt.userChoice;
-                    console.log(`User response to the install prompt: ${outcome}`);
+                    await deferredPrompt.userChoice;
                     deferredPrompt = null;
                 });
             }
@@ -500,7 +464,6 @@ class FocusTimer {
     }
 }
 
-// Запуск приложения
 document.addEventListener('DOMContentLoaded', () => {
     window.app = new FocusTimer();
 });
